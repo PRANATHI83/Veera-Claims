@@ -11,6 +11,7 @@ const port = 3068;
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -23,13 +24,13 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, uniqueSuffix + ext); // Store with simple filename
+    cb(null, uniqueSuffix + ext);
   }
 });
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 // PostgreSQL connection
@@ -41,7 +42,7 @@ const pool = new Pool({
   port: 5432,
 });
 
-// Initialize database table
+// Initialize database tables
 async function initializeDatabase() {
   try {
     await pool.query(`
@@ -91,21 +92,19 @@ async function initializeDatabase() {
 app.get('/api/claims', async (req, res) => {
   try {
     const { rows: claims } = await pool.query('SELECT * FROM claims ORDER BY date DESC');
-    
-    // Get attachments for each claim
+
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
         [claim.id]
       );
-// When retrieving files, construct the URL properly
-claim.attachments = attachments.map(att => ({
-  name: att.file_name,
-  url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
-  size: att.file_size
-}));
+      claim.attachments = attachments.map(att => ({
+        name: att.file_name,
+        url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
+        size: att.file_size
+      }));
     }
-    
+
     res.json(claims);
   } catch (err) {
     console.error(err);
@@ -121,19 +120,19 @@ app.get('/api/claims/:id', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Claim not found' });
     }
-    
+
     const claim = rows[0];
     const { rows: attachments } = await pool.query(
       'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
       [claim.id]
     );
-    
+
     claim.attachments = attachments.map(att => ({
       name: att.file_name,
-      url: `http://65.2.191.214:3068/${att.file_path}`,
+      url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
       size: att.file_size
     }));
-    
+
     res.json(claim);
   } catch (err) {
     console.error(err);
@@ -147,10 +146,10 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
   if (!/^ATS0(?!000)\d{3}$/.test(employeeId)) {
     return res.status(400).json({ error: 'Invalid Employee ID format' });
   }
+
   try {
     const { rows: claims } = await pool.query('SELECT * FROM claims WHERE employee_id = $1 ORDER BY date DESC', [employeeId]);
-    
-    // Get attachments for each claim
+
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
@@ -158,11 +157,11 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
       );
       claim.attachments = attachments.map(att => ({
         name: att.file_name,
-        url: `http://65.2.191.214:3068/${att.file_path}`,
+        url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
         size: att.file_size
       }));
     }
-    
+
     res.json(claims);
   } catch (err) {
     console.error(err);
@@ -173,8 +172,7 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
 // Add a new claim with file uploads
 app.post('/api/claims', upload.array('attachments'), async (req, res) => {
   const { employeeId, employeeName, title, amount, category, description } = req.body;
-  
-  // Validate required fields
+
   if (!employeeId || !employeeName || !title || !amount || !category || !description) {
     return res.status(400).json({ error: 'All fields are required' });
   }
@@ -182,7 +180,6 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
   const date = new Date().toISOString().split('T')[0];
 
   try {
-    // Check for existing claims
     const { rows: existing } = await pool.query(
       'SELECT * FROM claims WHERE employee_id = $1 AND date = $2',
       [employeeId, date]
@@ -191,10 +188,8 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
       return res.status(400).json({ error: 'Cannot submit more than one claim per day' });
     }
 
-    // Start transaction
     await pool.query('BEGIN');
 
-    // Insert claim
     const { rows } = await pool.query(
       `INSERT INTO claims (employee_id, employee_name, title, date, amount, category, description)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -204,7 +199,6 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
 
     const claim = rows[0];
 
-    // Process file attachments
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         await pool.query(
@@ -215,10 +209,8 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
       }
     }
 
-    // Commit transaction
     await pool.query('COMMIT');
 
-    // Get attachments for response
     const { rows: attachments } = await pool.query(
       'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
       [claim.id]
@@ -226,17 +218,15 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
 
     claim.attachments = attachments.map(att => ({
       name: att.file_name,
-      url: `http://65.2.191.214:3068/${path.basename(att.file_path)}`,
+      url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
       size: att.file_size
     }));
 
     res.status(201).json(claim);
   } catch (err) {
-    // Rollback transaction on error
     await pool.query('ROLLBACK');
     console.error('Error in POST /api/claims:', err);
 
-    // Clean up uploaded files if any
     if (req.files && req.files.length > 0) {
       req.files.forEach(file => {
         if (fs.existsSync(file.path)) {
@@ -278,7 +268,3 @@ app.listen(port, async () => {
   await initializeDatabase();
   console.log(`Server running on http://65.2.191.214:${port}`);
 });
-
-
-
-
