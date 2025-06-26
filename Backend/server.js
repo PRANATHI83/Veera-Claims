@@ -35,9 +35,9 @@ const upload = multer({
 // PostgreSQL connection
 const pool = new Pool({
   user: 'postgres',
-  host: 'localhost',
+  host: 'postgres',
   database: 'claims_portal',
-  password: 'Veera@0134',
+  password: 'admin234',
   port: 5432,
 });
 
