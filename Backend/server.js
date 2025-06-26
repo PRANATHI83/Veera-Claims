@@ -4,45 +4,47 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
 const app = express();
 const port = 3068;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+// Update this line to ensure proper path resolution
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Multer setup for file uploads
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, 'uploads');
     if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
+      fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
-  },
-});
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  }
 });
 
-// ✅ Correct Docker-internal PostgreSQL hostname
-const pool = new Pool({
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// PostgreSQL connection configuration
+const dbConfig = {
   user: 'postgres',
-  host: 'postgres', // Use service name from docker-compose
+  host: 'postgres',
   database: 'claims_portal',
   password: 'admin234',
   port: 5432,
-});
+};
 
-// Initialize tables and dummy data
+const pool = new Pool(dbConfig);
+
+// Initialize database table
 async function initializeDatabase() {
   try {
     await pool.query(`
@@ -85,15 +87,23 @@ async function initializeDatabase() {
     }
   } catch (err) {
     console.error('Error initializing database:', err);
+    process.exit(1); // Exit if database initialization fails
   }
 }
 
-// API routes
+// Helper function to construct file URLs
+function getFileUrl(filename) {
+  const baseUrl = process.env.NODE_ENV === 'production' 
+    ? 'https://your-production-domain.com' 
+    : `http://34.229.100.84:${port}`;
+  return `${baseUrl}/uploads/${encodeURIComponent(filename)}`;
+}
 
-// GET all claims
+// Get all claims
 app.get('/api/claims', async (req, res) => {
   try {
     const { rows: claims } = await pool.query('SELECT * FROM claims ORDER BY date DESC');
+    
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
@@ -101,50 +111,64 @@ app.get('/api/claims', async (req, res) => {
       );
       claim.attachments = attachments.map(att => ({
         name: att.file_name,
-        url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
+        url: getFileUrl(att.file_path),
         size: att.file_size
       }));
     }
+    
     res.json(claims);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: err.message
+    });
   }
 });
 
-// GET claim by ID
+// Get claim by ID
 app.get('/api/claims/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query('SELECT * FROM claims WHERE id = $1', [id]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Claim not found' });
-
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
+    
     const claim = rows[0];
     const { rows: attachments } = await pool.query(
       'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
       [claim.id]
     );
+    
     claim.attachments = attachments.map(att => ({
       name: att.file_name,
-      url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
+      url: getFileUrl(att.file_path),
       size: att.file_size
     }));
+    
     res.json(claim);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: err.message
+    });
   }
 });
 
-// GET claims by employee ID
+// Get claims by employee ID
 app.get('/api/claims/employee/:employeeId', async (req, res) => {
   const { employeeId } = req.params;
   if (!/^ATS0(?!000)\d{3}$/.test(employeeId)) {
     return res.status(400).json({ error: 'Invalid Employee ID format' });
   }
-
   try {
-    const { rows: claims } = await pool.query('SELECT * FROM claims WHERE employee_id = $1 ORDER BY date DESC', [employeeId]);
+    const { rows: claims } = await pool.query(
+      'SELECT * FROM claims WHERE employee_id = $1 ORDER BY date DESC', 
+      [employeeId]
+    );
+    
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
@@ -152,28 +176,44 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
       );
       claim.attachments = attachments.map(att => ({
         name: att.file_name,
-        url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
+        url: getFileUrl(att.file_path),
         size: att.file_size
       }));
     }
+    
     res.json(claims);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: err.message
+    });
   }
 });
 
-// POST new claim
+// Add a new claim with file uploads
 app.post('/api/claims', upload.array('attachments'), async (req, res) => {
-  const { employeeId, employeeName, title, amount, category, description } = req.body;
-
-  if (!employeeId || !employeeName || !title || !amount || !category || !description) {
-    return res.status(400).json({ error: 'All fields are required' });
+  // Validate required fields
+  const requiredFields = ['employeeId', 'employeeName', 'title', 'amount', 'category', 'description'];
+  const missingFields = requiredFields.filter(field => !req.body[field]);
+  
+  if (missingFields.length > 0) {
+    return res.status(400).json({ 
+      error: 'Missing required fields',
+      missing: missingFields
+    });
   }
 
+  const { employeeId, employeeName, title, amount, category, description } = req.body;
   const date = new Date().toISOString().split('T')[0];
 
   try {
+    // Validate employee ID format
+    if (!/^ATS0(?!000)\d{3}$/.test(employeeId)) {
+      return res.status(400).json({ error: 'Invalid Employee ID format' });
+    }
+
+    // Check for existing claims
     const { rows: existing } = await pool.query(
       'SELECT * FROM claims WHERE employee_id = $1 AND date = $2',
       [employeeId, date]
@@ -182,8 +222,10 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
       return res.status(400).json({ error: 'Cannot submit more than one claim per day' });
     }
 
+    // Start transaction
     await pool.query('BEGIN');
 
+    // Insert claim
     const { rows } = await pool.query(
       `INSERT INTO claims (employee_id, employee_name, title, date, amount, category, description)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -193,7 +235,8 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
 
     const claim = rows[0];
 
-    if (req.files?.length > 0) {
+    // Process file attachments
+    if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         await pool.query(
           `INSERT INTO claim_attachments (claim_id, file_name, file_path, file_size, mime_type)
@@ -203,8 +246,10 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
       }
     }
 
+    // Commit transaction
     await pool.query('COMMIT');
 
+    // Get attachments for response
     const { rows: attachments } = await pool.query(
       'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
       [claim.id]
@@ -212,50 +257,75 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
 
     claim.attachments = attachments.map(att => ({
       name: att.file_name,
-      url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
+      url: getFileUrl(att.file_path),
       size: att.file_size
     }));
 
     res.status(201).json(claim);
   } catch (err) {
+    // Rollback transaction on error
     await pool.query('ROLLBACK');
     console.error('Error in POST /api/claims:', err);
 
-    if (req.files?.length > 0) {
+    // Clean up uploaded files if any
+    if (req.files && req.files.length > 0) {
       req.files.forEach(file => {
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
       });
     }
 
-    res.status(500).json({
+    res.status(500).json({ 
       error: 'Internal server error',
-      details: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      message: err.message
     });
   }
 });
 
-// PUT update claim status
+// Update claim status and response
 app.put('/api/claims/:id', async (req, res) => {
   const { id } = req.params;
   const { status, response } = req.body;
+
+  if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
 
   try {
     const { rows } = await pool.query(
       'UPDATE claims SET status = $1, response = $2 WHERE id = $3 RETURNING *',
       [status, response || '', id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Claim not found' });
-
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Claim not found' });
+    }
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: err.message
+    });
   }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: err.message
+  });
 });
 
 // Start server
 app.listen(port, async () => {
-  await initializeDatabase();
-  console.log(`Server running on http://65.2.191.214:${port}`);
+  try {
+    await initializeDatabase();
+    console.log(`Server running on http://65.2.191.214:${port}`);
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  }
 });
