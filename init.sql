@@ -1,4 +1,4 @@
--- Create claims table
+-- Create table: claims
 CREATE TABLE IF NOT EXISTS claims (
     id SERIAL PRIMARY KEY,
     employee_id VARCHAR(7) NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS claims (
     response TEXT DEFAULT ''
 );
 
--- Create claim_attachments table
+-- Create table: claim_attachments
 CREATE TABLE IF NOT EXISTS claim_attachments (
     id SERIAL PRIMARY KEY,
     claim_id INTEGER REFERENCES claims(id) ON DELETE CASCADE,
@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS claim_attachments (
     mime_type VARCHAR(100) NOT NULL
 );
 
--- Seed initial claims data if not exists
+-- Seed data
 INSERT INTO claims (employee_id, employee_name, title, date, amount, category, description, status, response)
-SELECT * FROM (VALUES
-    ('ATS0123', 'Veera', 'Travel Expense Reimbursement', '2024-05-15', 37500.50, 'Travel', 'Expenses for client meeting in Mumbai including flight, hotel, and meals.', 'pending', ''),
-    ('ATS0456', 'Raghava', 'Office Supplies Purchase', '2024-05-10', 10450.30, 'Office Supplies', 'Purchased notebooks, pens, and printer paper for the marketing department.', 'approved', 'Approved. Reimbursement will be processed in the next payroll cycle.'),
-    ('ATS0124', 'Pavan', 'Training Course Fee', '2024-05-05', 62500.00, 'Training', 'Fee for Advanced Project Management certification course.', 'rejected', 'Rejected. This training was not pre-approved by your department manager.'),
-    ('ATS0789', 'Priya Sharma', 'Laptop Purchase', '2024-05-18', 85000.00, 'Equipment', 'New MacBook Pro for design team member', 'pending', ''),
-    ('ATS0345', 'Rahul Patel', 'Medical Checkup', '2024-05-12', 5000.00, 'Medical', 'Annual health checkup at Apollo Hospital', 'approved', 'Approved as per company health policy')
-) AS tmp(employee_id, employee_name, title, date, amount, category, description, status, response)
+SELECT *
+FROM (
+    VALUES
+        ('ATS0123', 'Veera', 'Travel Expense Reimbursement', '2024-05-15', 37500.50, 'Travel', 'Expenses for client meeting in Mumbai including flight, hotel, and meals.', 'pending', ''),
+        ('ATS0456', 'Raghava', 'Office Supplies Purchase', '2024-05-10', 10450.30, 'Office Supplies', 'Purchased notebooks, pens, and printer paper for the marketing department.', 'approved', 'Approved. Reimbursement will be processed in the next payroll cycle.'),
+        ('ATS0124', 'Pavan', 'Training Course Fee', '2024-05-05', 62500.00, 'Training', 'Fee for Advanced Project Management certification course.', 'rejected', 'Rejected. This training was not pre-approved by your department manager.'),
+        ('ATS0789', 'Priya Sharma', 'Laptop Purchase', '2024-05-18', 85000.00, 'Equipment', 'New MacBook Pro for design team member', 'pending', ''),
+        ('ATS0345', 'Rahul Patel', 'Medical Checkup', '2024-05-12', 5000.00, 'Medical', 'Annual health checkup at Apollo Hospital', 'approved', 'Approved as per company health policy')
+) AS seed(employee_id, employee_name, title, date, amount, category, description, status, response)
 WHERE NOT EXISTS (SELECT 1 FROM claims);
