@@ -4,6 +4,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+
 const app = express();
 const port = 3068;
 
@@ -12,7 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Configure multer for file uploads
+// Multer setup for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, 'uploads');
@@ -22,27 +23,26 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
-  }
+  },
 });
-
-const upload = multer({ 
+const upload = multer({
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
 });
 
-// PostgreSQL connection
+// ✅ Correct Docker-internal PostgreSQL hostname
 const pool = new Pool({
   user: 'postgres',
-  host: 'postgres',
+  host: 'postgres', // Use service name from docker-compose
   database: 'claims_portal',
   password: 'admin234',
   port: 5432,
 });
 
-// Initialize database tables
+// Initialize tables and dummy data
 async function initializeDatabase() {
   try {
     await pool.query(`
@@ -88,11 +88,12 @@ async function initializeDatabase() {
   }
 }
 
-// Get all claims
+// API routes
+
+// GET all claims
 app.get('/api/claims', async (req, res) => {
   try {
     const { rows: claims } = await pool.query('SELECT * FROM claims ORDER BY date DESC');
-
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
@@ -104,7 +105,6 @@ app.get('/api/claims', async (req, res) => {
         size: att.file_size
       }));
     }
-
     res.json(claims);
   } catch (err) {
     console.error(err);
@@ -112,27 +112,23 @@ app.get('/api/claims', async (req, res) => {
   }
 });
 
-// Get claim by ID
+// GET claim by ID
 app.get('/api/claims/:id', async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query('SELECT * FROM claims WHERE id = $1', [id]);
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Claim not found' });
-    }
+    if (rows.length === 0) return res.status(404).json({ error: 'Claim not found' });
 
     const claim = rows[0];
     const { rows: attachments } = await pool.query(
       'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
       [claim.id]
     );
-
     claim.attachments = attachments.map(att => ({
       name: att.file_name,
       url: `http://65.2.191.214:3068/uploads/${encodeURIComponent(att.file_path)}`,
       size: att.file_size
     }));
-
     res.json(claim);
   } catch (err) {
     console.error(err);
@@ -140,7 +136,7 @@ app.get('/api/claims/:id', async (req, res) => {
   }
 });
 
-// Get claims by employee ID
+// GET claims by employee ID
 app.get('/api/claims/employee/:employeeId', async (req, res) => {
   const { employeeId } = req.params;
   if (!/^ATS0(?!000)\d{3}$/.test(employeeId)) {
@@ -149,7 +145,6 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
 
   try {
     const { rows: claims } = await pool.query('SELECT * FROM claims WHERE employee_id = $1 ORDER BY date DESC', [employeeId]);
-
     for (const claim of claims) {
       const { rows: attachments } = await pool.query(
         'SELECT file_name, file_path, file_size FROM claim_attachments WHERE claim_id = $1',
@@ -161,7 +156,6 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
         size: att.file_size
       }));
     }
-
     res.json(claims);
   } catch (err) {
     console.error(err);
@@ -169,7 +163,7 @@ app.get('/api/claims/employee/:employeeId', async (req, res) => {
   }
 });
 
-// Add a new claim with file uploads
+// POST new claim
 app.post('/api/claims', upload.array('attachments'), async (req, res) => {
   const { employeeId, employeeName, title, amount, category, description } = req.body;
 
@@ -199,7 +193,7 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
 
     const claim = rows[0];
 
-    if (req.files && req.files.length > 0) {
+    if (req.files?.length > 0) {
       for (const file of req.files) {
         await pool.query(
           `INSERT INTO claim_attachments (claim_id, file_name, file_path, file_size, mime_type)
@@ -227,15 +221,13 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
     await pool.query('ROLLBACK');
     console.error('Error in POST /api/claims:', err);
 
-    if (req.files && req.files.length > 0) {
+    if (req.files?.length > 0) {
       req.files.forEach(file => {
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
       });
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error',
       details: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
@@ -243,7 +235,7 @@ app.post('/api/claims', upload.array('attachments'), async (req, res) => {
   }
 });
 
-// Update claim status and response
+// PUT update claim status
 app.put('/api/claims/:id', async (req, res) => {
   const { id } = req.params;
   const { status, response } = req.body;
@@ -253,9 +245,8 @@ app.put('/api/claims/:id', async (req, res) => {
       'UPDATE claims SET status = $1, response = $2 WHERE id = $3 RETURNING *',
       [status, response || '', id]
     );
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Claim not found' });
-    }
+    if (rows.length === 0) return res.status(404).json({ error: 'Claim not found' });
+
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
