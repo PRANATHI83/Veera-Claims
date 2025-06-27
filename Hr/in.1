@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -666,7 +667,7 @@
   </div>
   
   <script>
-    const API_URL = 'http://13.233.84.170:3814/api/claims';
+    const API_URL = 'http://13.233.84.170:3810/api/claims';
 
     function formatCurrency(amount) {
       return new Intl.NumberFormat('en-IN', {
@@ -735,7 +736,7 @@
         setTimeout(() => {
           notification.remove();
         }, 300);
-      }, 3000);
+      },3000);
     }
     
     async function fetchClaims() {
