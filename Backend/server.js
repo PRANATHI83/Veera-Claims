@@ -34,13 +34,13 @@ const upload = multer({
 });
 
 // PostgreSQL connection configuration
-const dbConfig = {
-  user: 'postgres',
-  host: 'postgres',
-  database: 'claims_portal',
-  password: 'admin834',
-  port: 5432,
-};
+const pool = new Pool({
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'postgres',
+  database: process.env.DB_NAME || 'claims_db',
+  password: process.env.DB_PASSWORD || 'admin234',
+  port: parseInt(process.env.DB_PORT) || 5432,
+});
 
 const pool = new Pool(dbConfig);
 
