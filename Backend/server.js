@@ -5,7 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const port = 3068;
+const port = 3810;
 
 // Middleware
 app.use(cors());
@@ -323,7 +323,7 @@ app.use((err, req, res, next) => {
 app.listen(port, async () => {
   try {
     await initializeDatabase();
-    console.log(`Server running on http://65.2.191.214:${port}`);
+    console.log(`Server running on http://13.233.84.170:${port}`);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
