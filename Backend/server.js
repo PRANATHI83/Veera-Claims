@@ -95,7 +95,7 @@ async function initializeDatabase() {
 function getFileUrl(filename) {
   const baseUrl = process.env.NODE_ENV === 'production' 
     ? 'https://your-production-domain.com' 
-    : `http://34.229.100.84:${port}`;
+    : `http://13.233.84.170:${port}`;
   return `${baseUrl}/uploads/${encodeURIComponent(filename)}`;
 }
 
