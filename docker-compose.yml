@@ -1,61 +1,62 @@
 version: '3.8'
-
 services:
   postgres:
-    image: postgres:15
-    container_name: veera_postgres
-    restart: always
+    image: postgres:14
+    container_name: postgres_claims1
     environment:
-      POSTGRES_DB: claims_portal
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: admin234
+      POSTGRES_DB: claims_portal
     ports:
-      - "3813:5432"
+      - "5770:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
-      - veera_net
+      - claims-net
 
   backend:
-    build: ./Backend
-    container_name: veera_backend
-    restart: always
+    build:
+      context: ./Backend
+    container_name: claims-backend1
     depends_on:
       - postgres
-    ports:
-      - "3068:3068"
     environment:
-      PGHOST: postgres
-      PGUSER: postgres
-      PGPASSWORD: admin234
-      PGDATABASE: claims_portal
-      PGPORT: 5432
-    volumes:
-      - ./Backend/Uploads:/app/uploads
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: admin234
+      DB_NAME: claims_portal
+      PORT: 3816
+    ports:
+      - "3816:3816"
     networks:
-      - veera_net
+      - claims-net
 
   frontend:
-    build: ./Frontend
-    container_name: veera_frontend
+    build:
+      context: ./Frontend
+    container_name: claims-frontend1
+    depends_on:
+      - backend
     ports:
-      - "8071:80"
+      - "8088:80"
     networks:
-      - veera_net
+      - claims-net
 
   hr:
-    build: ./HR
-    container_name: veera_hr
+    build:
+      context: ./Hr
+    container_name: claims-hr1
+    depends_on:
+      - backend
     ports:
-      - "8072:80"
+      - "8089:80"
     networks:
-      - veera_net
-
+      - claims-net
 volumes:
-  pgdata:
+  postgres_data:
 
 networks:
-  veera_net:
-
+  claims-net:
 
